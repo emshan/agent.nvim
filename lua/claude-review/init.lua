@@ -90,10 +90,6 @@ end
 function M.setup(opts)
   opts = opts or {}
 
-  if opts.enable_code_actions ~= false then
-    actions.setup_code_action_provider()
-  end
-
   vim.api.nvim_create_user_command("ClaudeReview", function()
     M.review_current_buffer()
   end, {})

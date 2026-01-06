@@ -15,22 +15,10 @@ Neovim plugin that integrates Claude Code CLI for code review with native diagno
 ```lua
 {
   "claude-review.nvim",
-  dir = "/Users/james/pro/lua/cc-review/claude-review.nvim",
   config = function()
     require("claude-review").setup({
       -- enable_code_actions = true, -- default: true, integrates with vim.lsp.buf.code_action()
     })
-  end,
-}
-```
-
-### packer.nvim
-
-```lua
-use {
-  "/Users/james/pro/lua/cc-review/claude-review.nvim",
-  config = function()
-    require("claude-review").setup()
   end,
 }
 ```
