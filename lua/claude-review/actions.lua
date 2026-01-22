@@ -1,17 +1,16 @@
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("claude-review")
-local diagnostic_fixes = {}
+local stored_code_actions = {}
 local code_action_provider_registered = false
 
-function M.store_fixes(diagnostics)
-  diagnostic_fixes = {}
+function M.store_code_actions(code_actions)
+  stored_code_actions = {}
 
-  for _, diag in ipairs(diagnostics) do
-    if diag.suggested_fix then
-      local key = string.format("%s:%d:%d", diag.file, diag.line, diag.col)
-      diagnostic_fixes[key] = diag.suggested_fix
-    end
+  for _, code_action in ipairs(code_actions) do
+    local diag = code_action.diagnostic
+    local key = string.format("%s:%d:%d", diag.file, diag.line, diag.col)
+    stored_code_actions[key] = code_action
   end
 end
 
@@ -31,12 +30,13 @@ function M.apply_fix_at_cursor()
   local diag = diagnostics[1]
   local key = string.format("%s:%d:%d", file_path, diag.lnum + 1, diag.col + 1)
 
-  local fix = diagnostic_fixes[key]
-  if not fix then
-    vim.notify("No suggested fix available for this diagnostic", vim.log.levels.INFO)
+  local code_action = stored_code_actions[key]
+  if not code_action or not code_action.edit then
+    vim.notify("No edit available for this code action", vim.log.levels.INFO)
     return
   end
 
+  local edit = code_action.edit
   local line_count = vim.api.nvim_buf_line_count(bufnr)
   if diag.lnum >= line_count then
     vim.notify("Diagnostic line is out of range", vim.log.levels.ERROR)
@@ -52,15 +52,15 @@ function M.apply_fix_at_cursor()
   end
 
   local new_line
-  if fix.old_text and fix.new_text then
-    new_line = current_line:gsub(vim.pesc(fix.old_text), fix.new_text)
+  if edit.old_text and edit.new_text then
+    new_line = current_line:gsub(vim.pesc(edit.old_text), edit.new_text)
 
     if new_line == current_line then
-      vim.notify("Could not find text to replace: " .. fix.old_text, vim.log.levels.WARN)
+      vim.notify("Could not find text to replace: " .. edit.old_text, vim.log.levels.WARN)
       return
     end
   else
-    vim.notify("Invalid fix format", vim.log.levels.ERROR)
+    vim.notify("Invalid edit format", vim.log.levels.ERROR)
     return
   end
 
@@ -75,7 +75,7 @@ function M.apply_fix_at_cursor()
   end
   vim.diagnostic.set(ns, bufnr, updated_diags, {})
 
-  vim.notify("Applied fix: " .. fix.description, vim.log.levels.INFO)
+  vim.notify("Applied: " .. code_action.title, vim.log.levels.INFO)
 end
 
 function M.show_fix_preview()
@@ -93,17 +93,13 @@ function M.show_fix_preview()
   local diag = diagnostics[1]
   local key = string.format("%s:%d:%d", file_path, diag.lnum + 1, diag.col + 1)
 
-  local fix = diagnostic_fixes[key]
-  if fix then
-    vim.notify(
-      string.format(
-        "Fix: %s\nOld: %s\nNew: %s",
-        fix.description,
-        fix.old_text,
-        fix.new_text
-      ),
-      vim.log.levels.INFO
-    )
+  local code_action = stored_code_actions[key]
+  if code_action then
+    local msg = string.format("Action: %s\nKind: %s", code_action.title, code_action.kind)
+    if code_action.edit then
+      msg = msg .. string.format("\nOld: %s\nNew: %s", code_action.edit.old_text, code_action.edit.new_text)
+    end
+    vim.notify(msg, vim.log.levels.INFO)
   end
 end
 
@@ -119,17 +115,22 @@ function M.get_code_actions(bufnr, range)
 
     for _, diag in ipairs(diagnostics) do
       local key = string.format("%s:%d:%d", file_path, diag.lnum + 1, diag.col + 1)
-      local fix = diagnostic_fixes[key]
+      local code_action = stored_code_actions[key]
 
-      if fix then
-        table.insert(actions, {
-          title = "Claude: " .. fix.description,
-          kind = "quickfix",
+      if code_action then
+        local action = {
+          title = "Claude: " .. code_action.title,
+          kind = code_action.kind,
           diagnostics = { diag },
-          action = function()
-            M.apply_specific_fix(bufnr, diag, fix)
-          end,
-        })
+        }
+
+        if code_action.edit then
+          action.action = function()
+            M.apply_specific_fix(bufnr, diag, code_action.edit)
+          end
+        end
+
+        table.insert(actions, action)
       end
     end
   end
@@ -165,20 +166,20 @@ local function find_text_in_buffer(bufnr, start_line, search_text)
   return nil, nil
 end
 
-function M.apply_specific_fix(bufnr, diag, fix)
+function M.apply_specific_fix(bufnr, diag, edit)
   local line_count = vim.api.nvim_buf_line_count(bufnr)
   if diag.lnum >= line_count then
     vim.notify("Diagnostic line is out of range", vim.log.levels.ERROR)
     return
   end
 
-  local start_line, end_line = find_text_in_buffer(bufnr, diag.lnum + 1, fix.old_text)
+  local start_line, end_line = find_text_in_buffer(bufnr, diag.lnum + 1, edit.old_text)
 
   if not start_line then
     local current_line = vim.api.nvim_buf_get_lines(bufnr, diag.lnum, diag.lnum + 1, false)[1]
 
     if current_line then
-      local new_line = current_line:gsub(vim.pesc(fix.old_text), fix.new_text)
+      local new_line = current_line:gsub(vim.pesc(edit.old_text), edit.new_text)
 
       if new_line ~= current_line then
         vim.api.nvim_buf_set_lines(bufnr, diag.lnum, diag.lnum + 1, false, { new_line })
@@ -192,7 +193,7 @@ function M.apply_specific_fix(bufnr, diag, fix)
         end
         vim.diagnostic.set(ns, bufnr, updated_diags, {})
 
-        vim.notify("Applied fix: " .. fix.description, vim.log.levels.INFO)
+        vim.notify("Applied edit", vim.log.levels.INFO)
         return
       end
     end
@@ -201,7 +202,7 @@ function M.apply_specific_fix(bufnr, diag, fix)
     return
   end
 
-  local new_lines = vim.split(fix.new_text, "\n")
+  local new_lines = vim.split(edit.new_text, "\n")
   vim.api.nvim_buf_set_lines(bufnr, start_line, end_line + 1, false, new_lines)
 
   vim.diagnostic.reset(ns, bufnr)
@@ -213,7 +214,7 @@ function M.apply_specific_fix(bufnr, diag, fix)
   end
   vim.diagnostic.set(ns, bufnr, updated_diags, {})
 
-  vim.notify("Applied fix: " .. fix.description, vim.log.levels.INFO)
+  vim.notify("Applied edit", vim.log.levels.INFO)
 end
 
 local function show_diff_preview(bufnr, start_line, end_line, new_lines, callback)
@@ -283,19 +284,19 @@ local function show_diff_preview(bufnr, start_line, end_line, new_lines, callbac
   })
 end
 
-function M.apply_fix_with_preview(bufnr, diag, fix)
-  local start_line, end_line = find_text_in_buffer(bufnr, diag.lnum + 1, fix.old_text)
+function M.apply_fix_with_preview(bufnr, diag, edit)
+  local start_line, end_line = find_text_in_buffer(bufnr, diag.lnum + 1, edit.old_text)
 
   if not start_line then
     start_line = diag.lnum
     end_line = diag.lnum
   end
 
-  local new_lines = vim.split(fix.new_text, "\n")
+  local new_lines = vim.split(edit.new_text, "\n")
 
   show_diff_preview(bufnr, start_line, end_line, new_lines, function(apply)
     if apply then
-      M.apply_specific_fix(bufnr, diag, fix)
+      M.apply_specific_fix(bufnr, diag, edit)
     end
   end)
 end

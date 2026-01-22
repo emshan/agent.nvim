@@ -1,0 +1,178 @@
+*claude-review.txt*  AI-powered code review using Claude
+
+==============================================================================
+CONTENTS                                              *claude-review-contents*
+
+    1. Introduction .......................... |claude-review-introduction|
+    2. Requirements .......................... |claude-review-requirements|
+    3. Setup ................................. |claude-review-setup|
+    4. Commands .............................. |claude-review-commands|
+    5. Code Actions .......................... |claude-review-code-actions|
+    6. Lua API ............................... |claude-review-api|
+    7. Debug ................................. |claude-review-debug|
+
+==============================================================================
+1. INTRODUCTION                                   *claude-review-introduction*
+
+claude-review is a Neovim plugin that provides AI-powered code review using
+Claude. It analyzes your code and provides diagnostics with optional fixes
+that integrate with Neovim's built-in diagnostic system and LSP code actions.
+
+Features:
+- Review current buffer or git diff
+- Diagnostics shown inline with severity levels
+- Code actions with automatic fixes
+- Integration with native LSP code action menu
+- Debug sidebar to inspect requests/responses
+
+==============================================================================
+2. REQUIREMENTS                                   *claude-review-requirements*
+
+- Neovim >= 0.9.0
+- Claude CLI (`claude`) installed and authenticated
+  https://github.com/anthropics/claude-code
+
+==============================================================================
+3. SETUP                                                 *claude-review-setup*
+
+Add to your Neovim configuration:
+>lua
+    require("claude-review").setup()
+<
+
+Optional keymaps:
+>lua
+    vim.keymap.set("n", "<leader>cr", "<cmd>ClaudeReview<cr>")
+    vim.keymap.set("n", "<leader>cd", "<cmd>ClaudeReviewDiff<cr>")
+    vim.keymap.set("n", "<leader>cf", "<cmd>ClaudeReviewApplyFix<cr>")
+    vim.keymap.set("n", "<leader>cx", "<cmd>ClaudeReviewDismiss<cr>")
+<
+
+==============================================================================
+4. COMMANDS                                           *claude-review-commands*
+
+                                                              *:ClaudeReview*
+:ClaudeReview [focus]
+    Review the current buffer. Claude analyzes the file and returns
+    diagnostics that are displayed inline.
+
+    Optional [focus] overrides the default review criteria. When omitted,
+    Claude focuses on bugs, code quality, performance, and security.
+
+    Examples:
+>
+        :ClaudeReview                       " Default review
+        :ClaudeReview refactoring           " Focus on refactoring
+        :ClaudeReview error handling        " Focus on error handling
+        :ClaudeReview naming conventions    " Focus on naming
+        :ClaudeReview security              " Focus on security only
+<
+
+                                                          *:ClaudeReviewDiff*
+:ClaudeReviewDiff [ref]
+    Review only the git diff for the current file. Compares against [ref]
+    (default: HEAD). Useful for reviewing only your recent changes.
+
+    Examples:
+>
+        :ClaudeReviewDiff           " Compare against HEAD
+        :ClaudeReviewDiff main      " Compare against main branch
+        :ClaudeReviewDiff HEAD~3    " Compare against 3 commits ago
+<
+
+                                                      *:ClaudeReviewApplyFix*
+:ClaudeReviewApplyFix
+    Apply the suggested fix for the diagnostic at the cursor position.
+    Only works if the code action includes an edit.
+
+                                                    *:ClaudeReviewPreviewFix*
+:ClaudeReviewPreviewFix
+    Preview the suggested fix for the diagnostic at the cursor without
+    applying it. Shows the action title, kind, and old/new text.
+
+                                                       *:ClaudeReviewDismiss*
+:ClaudeReviewDismiss
+    Dismiss the diagnostic at the current cursor line.
+
+                                                 *:ClaudeReviewDismissBuffer*
+:ClaudeReviewDismissBuffer
+    Dismiss all Claude review diagnostics in the current buffer.
+
+                                                    *:ClaudeReviewDismissAll*
+:ClaudeReviewDismissAll
+    Dismiss all Claude review diagnostics across all buffers.
+
+                                                         *:ClaudeReviewDebug*
+:ClaudeReviewDebug
+    Toggle the debug sidebar showing the last request/response.
+
+==============================================================================
+5. CODE ACTIONS                                   *claude-review-code-actions*
+
+Claude returns code actions that integrate with Neovim's LSP code action
+system. Each code action contains:
+
+    `title`       Short description (e.g., "Fix null check")
+    `kind`        One of: "quickfix", "refactor", "source"
+    `diagnostic`  The associated issue (file, line, col, severity, message)
+    `edit`        Optional fix with old_text and new_text
+
+Code actions appear in your LSP code action menu (typically `<leader>ca` or
+`vim.lsp.buf.code_action()`). Actions with edits can be applied directly.
+
+Severity levels:
+    `error`    Bugs, crashes, security issues
+    `warning`  Code smells, potential problems
+    `info`     Suggestions, improvements
+    `hint`     Style, minor recommendations
+
+==============================================================================
+6. LUA API                                               *claude-review-api*
+
+                                          *claude-review.review_current_buffer*
+require("claude-review").review_current_buffer([focus])
+    Programmatically trigger a review of the current buffer.
+    Optional [focus] string overrides default review criteria.
+
+                                                 *claude-review.review_diff*
+require("claude-review").review_diff([ref])
+    Review the git diff. Optional [ref] defaults to "HEAD".
+
+                                            *claude-review.dismiss_at_cursor*
+require("claude-review").dismiss_at_cursor()
+    Dismiss diagnostic at cursor.
+
+                                               *claude-review.dismiss_buffer*
+require("claude-review").dismiss_buffer()
+    Dismiss all diagnostics in current buffer.
+
+                                                  *claude-review.dismiss_all*
+require("claude-review").dismiss_all()
+    Dismiss all diagnostics globally.
+
+                                                   *claude-review.apply_fix*
+require("claude-review").apply_fix()
+    Apply fix at cursor.
+
+                                                 *claude-review.preview_fix*
+require("claude-review").preview_fix()
+    Preview fix at cursor.
+
+                                                *claude-review.toggle_debug*
+require("claude-review").toggle_debug()
+    Toggle debug sidebar.
+
+==============================================================================
+7. DEBUG                                                 *claude-review-debug*
+
+Use `:ClaudeReviewDebug` to open a sidebar showing:
+
+- The prompt sent to Claude
+- The raw JSON response
+- Any errors that occurred
+
+This is useful for troubleshooting when diagnostics aren't appearing as
+expected or when you want to see exactly what Claude analyzed.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

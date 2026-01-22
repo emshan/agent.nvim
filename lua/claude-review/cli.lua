@@ -4,49 +4,66 @@ local debug = require("claude-review.debug")
 local json_schema = vim.json.encode({
   type = "object",
   properties = {
-    diagnostics = {
+    code_actions = {
       type = "array",
       items = {
         type = "object",
         properties = {
-          file = { type = "string" },
-          line = { type = "number" },
-          col = { type = "number" },
-          severity = { type = "string", enum = { "error", "warning", "info", "hint" } },
-          message = { type = "string" },
-          suggested_fix = {
+          title = { type = "string" },
+          kind = { type = "string", enum = { "quickfix", "refactor", "source" } },
+          diagnostic = {
             type = "object",
             properties = {
-              description = { type = "string" },
+              file = { type = "string" },
+              line = { type = "number" },
+              col = { type = "number" },
+              severity = { type = "string", enum = { "error", "warning", "info", "hint" } },
+              message = { type = "string" },
+            },
+            required = { "file", "line", "col", "severity", "message" }
+          },
+          edit = {
+            type = "object",
+            properties = {
               old_text = { type = "string" },
               new_text = { type = "string" }
-            }
+            },
+            required = { "old_text", "new_text" }
           }
         },
-        required = { "file", "line", "col", "severity", "message" }
+        required = { "title", "kind", "diagnostic" }
       }
     }
   },
-  required = { "diagnostics" }
+  required = { "code_actions" }
 })
 
-local function build_review_prompt(file_path)
-  return string.format(
-    [[Please review the code in file: %s
-
-Focus on:
+local function build_review_prompt(file_path, focus)
+  local focus_section
+  if focus and focus ~= "" then
+    focus_section = string.format("Focus on: %s", focus)
+  else
+    focus_section = [[Focus on:
 - Potential bugs and logic errors
 - Code quality and readability issues
 - Performance concerns
-- Security vulnerabilities
+- Security vulnerabilities]]
+  end
 
-For each issue found, if you can provide a suggested fix, include it in the suggested_fix field with:
-- description: Brief description of the fix
-- old_text: The exact text to replace
-- new_text: The replacement text
+  return string.format(
+    [[Please review the code in file: %s
+
+%s
+
+For each issue found, create a code_action with:
+- title: Brief description of the action (e.g., "Fix null check", "Rename variable")
+- kind: One of "quickfix", "refactor", or "source"
+- diagnostic: The issue details (file, line, col, severity, message)
+- edit: If fixable, include old_text and new_text for the replacement
 
 Be specific about line and column numbers. Only include actual issues found.]],
-    file_path
+    file_path,
+    focus_section
   )
 end
 
@@ -57,6 +74,7 @@ local function build_diff_review_prompt(file_path, ref)
 First, run: git diff %s -- %s
 
 Focus on the changes only. Line numbers should refer to the current file state.
+For each issue, create a code_action with title, kind, diagnostic, and optional edit.
 Be specific about line and column numbers. Only include actual issues found in the changes.]],
     file_path,
     ref,
@@ -65,8 +83,8 @@ Be specific about line and column numbers. Only include actual issues found in t
   )
 end
 
-function M.review_file(file_path, callback)
-  local prompt = build_review_prompt(file_path)
+function M.review_file(file_path, focus, callback)
+  local prompt = build_review_prompt(file_path, focus)
 
   debug.store_request(prompt)
 

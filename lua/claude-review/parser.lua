@@ -1,7 +1,7 @@
 local M = {}
 
 local function find_json_in_text(text)
-  local json_start = text:find('{"diagnostics"')
+  local json_start = text:find('{"code_actions"')
   if not json_start then
     return nil
   end
@@ -46,24 +46,24 @@ function M.parse_claude_response(raw_output)
     return nil, "Failed to parse outer JSON: " .. tostring(outer)
   end
 
-  if outer.structured_output and outer.structured_output.diagnostics then
-    return outer.structured_output.diagnostics, nil
+  if outer.structured_output and outer.structured_output.code_actions then
+    return outer.structured_output.code_actions, nil
   end
 
   if outer.type == "result" and outer.result then
-    if type(outer.result) == "table" and outer.result.diagnostics then
-      return outer.result.diagnostics, nil
+    if type(outer.result) == "table" and outer.result.code_actions then
+      return outer.result.code_actions, nil
     end
 
     local content_text = outer.result
     local json_str = find_json_in_text(content_text)
     if json_str then
-      local ok_inner, diagnostics_obj = pcall(vim.json.decode, json_str)
-      if ok_inner and diagnostics_obj.diagnostics then
-        return diagnostics_obj.diagnostics, nil
+      local ok_inner, response_obj = pcall(vim.json.decode, json_str)
+      if ok_inner and response_obj.code_actions then
+        return response_obj.code_actions, nil
       end
     end
-    return nil, "Could not find diagnostics in result"
+    return nil, "Could not find code_actions in result"
   end
 
   if outer.messages and #outer.messages > 0 then
@@ -81,19 +81,19 @@ function M.parse_claude_response(raw_output)
 
     local json_str = find_json_in_text(content_text)
     if not json_str then
-      return nil, "Could not find diagnostics JSON in response"
+      return nil, "Could not find code_actions JSON in response"
     end
 
-    local ok_inner, diagnostics_obj = pcall(vim.json.decode, json_str)
+    local ok_inner, response_obj = pcall(vim.json.decode, json_str)
     if not ok_inner then
-      return nil, "Failed to parse diagnostics JSON: " .. tostring(diagnostics_obj)
+      return nil, "Failed to parse code_actions JSON: " .. tostring(response_obj)
     end
 
-    if not diagnostics_obj.diagnostics then
-      return nil, "No diagnostics array in parsed JSON"
+    if not response_obj.code_actions then
+      return nil, "No code_actions array in parsed JSON"
     end
 
-    return diagnostics_obj.diagnostics, nil
+    return response_obj.code_actions, nil
   end
 
   return nil, "Unrecognized response format"

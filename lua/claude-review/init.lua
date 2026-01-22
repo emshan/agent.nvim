@@ -27,7 +27,7 @@ local function handle_response(raw_output, err)
   end)
 end
 
-function M.review_current_buffer()
+function M.review_current_buffer(focus)
   local bufnr = vim.api.nvim_get_current_buf()
   local file_path = vim.api.nvim_buf_get_name(bufnr)
 
@@ -36,9 +36,13 @@ function M.review_current_buffer()
     return
   end
 
-  show_spinner("Claude reviewing: " .. vim.fn.fnamemodify(file_path, ":."))
+  local msg = "Claude reviewing: " .. vim.fn.fnamemodify(file_path, ":.")
+  if focus and focus ~= "" then
+    msg = msg .. " (" .. focus .. ")"
+  end
+  show_spinner(msg)
 
-  cli.review_file(file_path, handle_response)
+  cli.review_file(file_path, focus, handle_response)
 end
 
 function M.review_diff(ref)
@@ -90,9 +94,10 @@ end
 function M.setup(opts)
   opts = opts or {}
 
-  vim.api.nvim_create_user_command("ClaudeReview", function()
-    M.review_current_buffer()
-  end, {})
+  vim.api.nvim_create_user_command("ClaudeReview", function(cmd_opts)
+    local focus = cmd_opts.args ~= "" and cmd_opts.args or nil
+    M.review_current_buffer(focus)
+  end, { nargs = "*" })
 
   vim.api.nvim_create_user_command("ClaudeReviewDiff", function(cmd_opts)
     local ref = cmd_opts.args ~= "" and cmd_opts.args or "HEAD"
